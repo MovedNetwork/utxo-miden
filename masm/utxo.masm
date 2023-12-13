@@ -1,0 +1,17 @@
+# TODO: write the real utxo program.
+# For now this is just copied from the [merkle_store example](https://github.com/0xPolygonMiden/miden-vm/tree/main/miden/examples/merkle_store)
+
+begin
+    # push the root of the Merkle Tree on the stack
+    push.0x0463f7d47758ad94b11dbf9675ffb7b331baa9c150d7fac6d784055c313eab0e
+
+    # get value at depth = 2, index = 2 from the Merkle Tree; this value should be 22
+    push.2.2
+    mtree_get
+    # check that returned value is equal to 22
+    push.22.0.0.0
+    assert_eqw
+
+    dropw
+
+end
