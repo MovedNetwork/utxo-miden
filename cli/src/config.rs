@@ -6,6 +6,8 @@ pub struct Config {
     pub code_path: PathBuf,
     /// Path to the file with inputs used to initialize the MidenVM
     pub inputs_path: PathBuf,
+    //  Path to the file where output from the CLI are written
+    pub outputs_path: PathBuf,
 }
 
 impl Config {
@@ -22,6 +24,7 @@ impl Default for Config {
         Self {
             code_path: base_path.join("utxo.masm"),
             inputs_path: base_path.join("utxo.inputs"),
+            outputs_path: base_path.join("utxo.outputs"),
         }
     }
 }

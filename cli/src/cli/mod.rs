@@ -2,7 +2,7 @@ use crate::config::Config;
 use clap::{Parser, Subcommand};
 use std::path::PathBuf;
 
-mod run;
+mod prove;
 
 #[derive(Parser)]
 pub struct Cli {
@@ -16,12 +16,17 @@ pub struct Cli {
 
 #[derive(Subcommand)]
 pub enum Command {
-    Run,
+    /// Generate a proof from executing MidenVM.
+    Prove,
 }
 
 pub fn execute(config: &Config, command: Command) -> anyhow::Result<()> {
     match command {
-        Command::Run => run::execute(config)?,
+        Command::Prove => {
+            let output = prove::execute(config)?;
+            output.write_to_file(&config.outputs_path)?;
+            println!("Proof written to {:?}", config.outputs_path);
+        }
     }
 
     Ok(())
