@@ -1,20 +1,16 @@
-use clap::{Parser, Subcommand};
+use clap::Parser;
+use config::Config;
 
-#[derive(Parser)]
-pub struct Cli {
-    #[clap(subcommand)]
-    pub command: Command,
-}
+mod cli;
+mod config;
 
-#[derive(Subcommand)]
-pub enum Command {
-    Run,
-}
+fn main() -> anyhow::Result<()> {
+    let args = cli::Cli::parse();
+    let config = if let Some(path) = args.config.as_deref() {
+        Config::load(path)?
+    } else {
+        Config::default()
+    };
 
-fn main() {
-    let args = Cli::parse();
-
-    match args.command {
-        Command::Run => println!("TODO: execute a utxo something"),
-    }
+    cli::execute(&config, args.command)
 }
