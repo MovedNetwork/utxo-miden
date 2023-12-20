@@ -6,8 +6,10 @@ pub struct Config {
     pub code_path: PathBuf,
     /// Path to the file with inputs used to initialize the MidenVM
     pub inputs_path: PathBuf,
-    //  Path to the file where output from the CLI are written
+    /// Path to the file where output from the CLI are written
     pub outputs_path: PathBuf,
+    /// Directory where data from no-zk part of the CLI is saved.
+    pub no_zk_path: PathBuf,
 }
 
 impl Config {
@@ -25,6 +27,7 @@ impl Default for Config {
             code_path: base_path.join("utxo.masm"),
             inputs_path: base_path.join("utxo.inputs"),
             outputs_path: base_path.join("utxo.outputs"),
+            no_zk_path: Path::new("example").into(),
         }
     }
 }

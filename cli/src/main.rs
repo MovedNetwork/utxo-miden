@@ -4,6 +4,8 @@ use config::Config;
 mod cli;
 mod config;
 mod inputs;
+mod utils;
+mod utxo;
 
 fn main() -> anyhow::Result<()> {
     let args = cli::Cli::parse();

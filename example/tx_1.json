@@ -1,0 +1,13 @@
+{
+    "input": "0x9cd9aaca27f87dc2df8e6e0a0ca40cb6fdef5e7a6acbeb4be2b078934178af7d",
+    "outputs": [
+        {
+            "owner": "0xda51ad197710bafc3192226e859c8b29a2b1757dafcda157a0a293a8e392517c",
+            "value": "0xf000000000000000"
+        },
+        {
+            "owner": "0x496d5921189e0f6a49b64c90a62286a47381bd63641ef9d847f7b9fc917b68f8",
+            "value": "0x0f00000000000000"
+        }
+    ]
+}

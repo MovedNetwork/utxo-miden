@@ -2,6 +2,7 @@ use crate::config::Config;
 use clap::{Parser, Subcommand};
 use std::path::PathBuf;
 
+mod no_zk;
 mod prove;
 
 #[derive(Parser)]
@@ -18,6 +19,8 @@ pub struct Cli {
 pub enum Command {
     /// Generate a proof from executing MidenVM.
     Prove,
+    #[clap(subcommand)]
+    NoZk(no_zk::Command),
 }
 
 pub fn execute(config: &Config, command: Command) -> anyhow::Result<()> {
@@ -27,6 +30,7 @@ pub fn execute(config: &Config, command: Command) -> anyhow::Result<()> {
             output.write_to_file(&config.outputs_path)?;
             println!("Proof written to {:?}", config.outputs_path);
         }
+        Command::NoZk(sub_command) => sub_command.execute(config)?,
     }
 
     Ok(())
