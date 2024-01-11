@@ -36,7 +36,7 @@ First generate a state with a single UTXO owned by one of the keys:
 ```
 $ ./target/release/utxo-miden-cli no-zk create-state --owner 0xda51ad197710bafc3192226e859c8b29a2b1757dafcda157a0a293a8e392517c --value 0xff00000000000000
 
-State root = 0xaf07093f592544d965796bdcd0de8794149240d2b0036326211cbe3dd1ce0f96
+State root = 0x7f9f3674fed4e65332aa719365de3bfbaa7c6042db99dc956dba117415d2bc97
 State written to "example/state.json"
 ```
 
@@ -45,7 +45,7 @@ Then you can execute `example/tx_1.json` which splits that one UTXO into two, on
 ```
 ./target/release/utxo-miden-cli no-zk process-transaction --signer 0xda51ad197710bafc3192226e859c8b29a2b1757dafcda157a0a293a8e392517c --tx-path ./example/tx_1.json
 
-State root = 0x276265a4c039cd3703b46af13f03f3f03b2f7dbf4c67e070db8bed0fd5727152
+State root = 0xcc1c4b56de4304be11b09aff1f753baa145e4fc2e53646a96fa6b95ea40660d2
 State written to "example/state.json"
 ```
 
@@ -74,7 +74,7 @@ Using the correct signer we successfully perform the state transition:
 ```
 $ ./target/release/utxo-miden-cli no-zk process-transaction --signer 0x496d5921189e0f6a49b64c90a62286a47381bd63641ef9d847f7b9fc917b68f8 --tx-path ./example/tx_2.json
 
-State root = 0x5fb6c9c12fa3a29783886b5fea3c637595a6914fa5ef423aab2b256ddfdace30
+State root = 0x03a72f5706e8e5ce3d0f4550efb32d5eec62aa9b21ee4933bcde457de3139e71
 State written to "example/state.json"
 ```
 
@@ -84,6 +84,6 @@ The final transaction, `example/tx_3.json`, burns the second UTXO so that only 1
 
 ```
 $ ./target/release/utxo-miden-cli no-zk process-transaction --signer 0xda51ad197710bafc3192226e859c8b29a2b1757dafcda157a0a293a8e392517c --tx-path ./example/tx_3.json
-State root = 0x8d49cde9860da576afb82559c9bb19ea6ef65e7c8ef2bef44a9d73528bbb8ea1
+State root = 0x1c7dfcae5078d5536c4931d6c4bb63eaf56dcc29d27f3ec3495149b1c3451a49
 State written to "example/state.json"
 ```

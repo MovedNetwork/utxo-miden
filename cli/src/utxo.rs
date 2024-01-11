@@ -6,7 +6,7 @@ use miden_crypto::{
     Felt, Word,
 };
 use std::fmt;
-use winter_utils::{AsBytes, Deserializable, Serializable};
+use winter_utils::{Deserializable, Serializable};
 
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
 #[serde(try_from = "SerializedKey", into = "SerializedKey")]
@@ -22,23 +22,23 @@ pub struct Utxo {
     pub value: Felt,
 }
 impl Utxo {
-    pub fn serialize(&self) -> Vec<u8> {
-        let mut bytes = Vec::with_capacity(40);
-        self.serialize_inner(&mut bytes);
-        bytes
+    pub fn serialize(&self) -> Vec<Felt> {
+        let mut output = Vec::with_capacity(5);
+        self.serialize_inner(&mut output);
+        output
     }
 
     pub fn hash(&self) -> Word {
-        let bytes = self.serialize();
-        let h = Rpo256::hash(&bytes);
+        let elems = self.serialize();
+        let h = Rpo256::hash_elements(&elems);
         h.into()
     }
 
-    fn serialize_inner(&self, target: &mut Vec<u8>) {
-        for e in self.owner.iter() {
-            target.extend_from_slice(e.as_bytes());
+    fn serialize_inner(&self, target: &mut Vec<Felt>) {
+        for e in self.owner {
+            target.push(e);
         }
-        target.extend_from_slice(self.value.as_bytes());
+        target.push(self.value);
     }
 }
 
@@ -55,14 +55,14 @@ pub struct Transaction {
 
 impl Transaction {
     pub fn hash(&self) -> Word {
-        let mut bytes = Vec::with_capacity(32 + 40 * self.outputs.len());
-        for e in self.input.iter() {
-            bytes.extend_from_slice(e.as_bytes());
+        let mut elems = Vec::with_capacity(4 + 5 * self.outputs.len());
+        for e in self.input {
+            elems.push(e);
         }
         for u in self.outputs.iter() {
-            u.serialize_inner(&mut bytes);
+            u.serialize_inner(&mut elems);
         }
-        let h = Rpo256::hash(&bytes);
+        let h = Rpo256::hash_elements(&elems);
         h.into()
     }
 
