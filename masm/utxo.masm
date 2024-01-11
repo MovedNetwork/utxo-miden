@@ -1,17 +1,44 @@
-# TODO: write the real utxo program.
-# For now this is just copied from the [merkle_store example](https://github.com/0xPolygonMiden/miden-vm/tree/main/miden/examples/merkle_store)
+const.TRANSACTION_HASH_MEMORY_INDEX=10
+const.UNKNOWN_UTXO_HASH=100
+
+#! Search for the transaction hash index and push on to the stack. If not found, error out
+#! Note: Assumes the stack has the Merkle root at the top and memory has the transaction input hash
+proc.merkle_index
+    # Iterate over all the Merkle tree leaves starting from index 0
+    push.0 mem_store.0
+    repeat.8
+        mem_load.0
+        push.3
+
+        mtree_get
+        padw mem_loadw.TRANSACTION_HASH_MEMORY_INDEX
+        eqw
+        if.true
+            mem_load.0
+            # Index 1,2... when found and 0 for not found
+            add.1
+            mem_store.1
+        end
+        dropw dropw
+
+        # Increment the current index
+        mem_load.0
+        add.1
+        mem_store.0
+    end
+
+    # Error out if index is not found and adjust index to start from 0 again
+    mem_load.1
+    eq.0
+    assertz.err=UNKNOWN_UTXO_HASH
+    mem_load.1
+    sub.1
+end
 
 begin
-    # push the root of the Merkle Tree on the stack
-    push.0x0463f7d47758ad94b11dbf9675ffb7b331baa9c150d7fac6d784055c313eab0e
+    # Keep transaction input hash in memory for multiple future access
+    padw adv_loadw
+    mem_storew.TRANSACTION_HASH_MEMORY_INDEX dropw
 
-    # get value at depth = 2, index = 2 from the Merkle Tree; this value should be 22
-    push.2.2
-    mtree_get
-    # check that returned value is equal to 22
-    push.22.0.0.0
-    assert_eqw
-
-    dropw
-
+    exec.merkle_index
 end

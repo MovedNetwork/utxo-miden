@@ -20,7 +20,10 @@ pub fn execute(config: &Config) -> anyhow::Result<ProveOutput> {
     let program = assembler.compile(code)?;
     let input_file = InputFile::parse(&config.inputs_path)?;
     let stack_inputs = StackInputs::try_from_values(input_file.operand_stack.into_iter())?;
-    let advice_inputs = create_advice_inputs(input_file.merkle_tree.unwrap_or_default())?;
+    let advice_inputs = create_advice_inputs(
+        input_file.advice_stack,
+        input_file.merkle_tree.unwrap_or_default(),
+    )?;
     let host = DefaultHost::new(MemAdviceProvider::from(advice_inputs));
 
     let (stack_outputs, proof) =
@@ -62,7 +65,10 @@ impl ProveOutput {
     }
 }
 
-fn create_advice_inputs(merkle_data: Vec<[u8; 32]>) -> anyhow::Result<AdviceInputs> {
+fn create_advice_inputs(
+    advice_stack: Vec<u64>,
+    merkle_data: Vec<[u8; 32]>,
+) -> anyhow::Result<AdviceInputs> {
     let leaves: anyhow::Result<Vec<Word>> = merkle_data
         .into_iter()
         .map(|bytes| {
@@ -79,5 +85,7 @@ fn create_advice_inputs(merkle_data: Vec<[u8; 32]>) -> anyhow::Result<AdviceInpu
         tmp.extend(tree.inner_nodes());
         tmp
     };
-    Ok(AdviceInputs::default().with_merkle_store(merkle_store))
+    Ok(AdviceInputs::default()
+        .with_merkle_store(merkle_store)
+        .with_stack_values(advice_stack)?)
 }

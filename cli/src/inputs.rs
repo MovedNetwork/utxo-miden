@@ -5,6 +5,8 @@ use std::{path::Path, str::FromStr};
 pub struct InputFile {
     /// String representation of the initial operand stack, composed of chained field elements.
     pub operand_stack: Vec<u64>,
+    /// String representation of the initial advice stack, composed of chained field elements.
+    pub advice_stack: Vec<u64>,
     /// Optional vector of merkle data which will be loaded into the initial merkle store.
     pub merkle_tree: Option<Vec<[u8; 32]>>,
 }
@@ -23,6 +25,7 @@ impl InputFile {
 #[derive(Debug, serde::Deserialize, serde::Serialize)]
 struct SerializeableInputFile {
     pub operand_stack: Vec<String>,
+    pub advice_stack: Vec<String>,
     pub merkle_tree: Option<Vec<String>>,
 }
 
@@ -32,6 +35,12 @@ impl TryFrom<SerializeableInputFile> for InputFile {
     fn try_from(value: SerializeableInputFile) -> Result<Self, Self::Error> {
         let operand_stack: anyhow::Result<Vec<u64>> = value
             .operand_stack
+            .into_iter()
+            .map(|s| u64::from_str(&s).map_err(Into::into))
+            .collect();
+
+        let advice_stack: anyhow::Result<Vec<u64>> = value
+            .advice_stack
             .into_iter()
             .map(|s| u64::from_str(&s).map_err(Into::into))
             .collect();
@@ -49,6 +58,7 @@ impl TryFrom<SerializeableInputFile> for InputFile {
 
         Ok(Self {
             operand_stack: operand_stack?,
+            advice_stack: advice_stack?,
             merkle_tree: merkle_tree.transpose()?,
         })
     }

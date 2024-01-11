@@ -1,3 +1,4 @@
 /target
 masm/utxo.outputs
 example/state.json
+.idea
