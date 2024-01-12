@@ -1,6 +1,16 @@
 const.TRANSACTION_HASH_MEMORY_INDEX=10
 const.UNKNOWN_UTXO_HASH=100
 
+#! Compute RPO hash of a UTXO which is composed of owner (4 words) and value (1 word)
+proc.utxo_hash
+    # Because it's not a multiple of 8, we pad with 1,0,0,0 and append 1,0,0 to value, ref: ElementHasher
+    push.1.0.0.0
+    adv_push.5
+    push.1.0.0
+    hperm
+    dropw swapw dropw # Isolate hash because final output is [Word, Hash, Word].
+end
+
 #! Search for the transaction hash index and push on to the stack. If not found, error out
 #! Note: Assumes the stack has the Merkle root at the top and memory has the transaction input hash
 proc.merkle_index
@@ -37,8 +47,9 @@ end
 
 begin
     # Keep transaction input hash in memory for multiple future access
-    padw adv_loadw
     mem_storew.TRANSACTION_HASH_MEMORY_INDEX dropw
 
     exec.merkle_index
+
+    exec.utxo_hash
 end

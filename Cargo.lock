@@ -614,6 +614,7 @@ dependencies = [
  "clap",
  "hex",
  "miden-crypto",
+ "miden-stdlib",
  "miden-vm",
  "serde",
  "serde_json",

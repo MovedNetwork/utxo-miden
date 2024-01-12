@@ -5,6 +5,7 @@ use miden::{
     AdviceInputs, Assembler, DefaultHost, ExecutionProof, MemAdviceProvider, ProvingOptions,
     StackInputs, StackOutputs, Word,
 };
+use miden_stdlib::StdLibrary;
 use std::path::Path;
 
 #[derive(Debug, Clone)]
@@ -16,7 +17,7 @@ pub struct ProveOutput {
 
 pub fn execute(config: &Config) -> anyhow::Result<ProveOutput> {
     let code = std::fs::read_to_string(&config.code_path)?;
-    let assembler = Assembler::default();
+    let assembler = Assembler::default().with_library(&StdLibrary::default())?;
     let program = assembler.compile(code)?;
     let input_file = InputFile::parse(&config.inputs_path)?;
     let stack_inputs = StackInputs::try_from_values(input_file.operand_stack.into_iter())?;
