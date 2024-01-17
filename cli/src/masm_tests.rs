@@ -4,8 +4,14 @@ use miden::{
     AdviceInputs, Assembler, DefaultHost, ExecutionTrace, MemAdviceProvider, ProgramAst,
     ProvingOptions, StackInputs,
 };
+use miden_crypto::{StarkField, WORD_SIZE};
 use miden_stdlib::StdLibrary;
-use std::fmt::Write;
+use std::{collections::BTreeMap, fmt::Write, str::FromStr};
+
+use crate::{
+    utils::HexString,
+    utxo::{SerializedTransaction, SerializedUtxo, Transaction},
+};
 
 #[test]
 fn test_divmod() {
@@ -19,6 +25,8 @@ fn test_divmod() {
             "divmod",
             inputs,
             AdviceInputs::default(),
+            BTreeMap::new(),
+            vec![],
         )
         .unwrap();
         let outputs = trace.stack_outputs();
@@ -40,12 +48,109 @@ fn test_divmod() {
     test_case(103, 4);
 }
 
-// TODO: include parameter to initialize memory
+#[test]
+fn test_range_hash() {
+    fn test_case(input: &str, utxos: Vec<(&str, &str)>) {
+        let transaction = Transaction::try_from(SerializedTransaction {
+            input: HexString::from_str(input).unwrap(),
+            outputs: utxos
+                .iter()
+                .map(|(owner, value)| SerializedUtxo {
+                    owner: HexString::from_str(owner).unwrap(),
+                    value: HexString::from_str(value).unwrap(),
+                })
+                .collect(),
+        })
+        .unwrap();
+
+        let hash = transaction
+            .hash()
+            .iter()
+            .map(|u| u.as_int())
+            .collect::<Vec<u64>>();
+
+        let number_of_elements_to_hash = 4 + utxos.len() as u64 * 5;
+        let inputs = StackInputs::try_from_values([20, number_of_elements_to_hash]).unwrap();
+        // Fill in the memory with transaction field elements contiguously in chunks of WORD SIZE
+        let mut memory = BTreeMap::new();
+        memory.insert(
+            20,
+            transaction
+                .input
+                .iter()
+                .map(|i| i.to_string())
+                .collect::<Vec<String>>(),
+        );
+        // UTXO hashes each have 5 field elements (4 for hash + 1 for value).
+        // We collect them first and fill in with zeros to make it a multiple of WORD SIZE.
+        // Then we distribute these elements in incremental memory addresses.
+        let mut utxo_felts = vec![];
+        transaction.outputs.iter().for_each(|utxo| {
+            utxo.owner.iter().for_each(|felt| {
+                utxo_felts.push(felt.to_string());
+            });
+            utxo_felts.push(utxo.value.to_string());
+        });
+        while utxo_felts.len() % WORD_SIZE > 0 {
+            utxo_felts.push("0".into());
+        }
+        utxo_felts.chunks(WORD_SIZE).for_each(|chunk| {
+            memory.insert(20 + memory.len(), chunk.into());
+        });
+        let constants = vec![("RPO_RATE_WIDTH", "8")];
+
+        let trace = run_test(
+            "../masm/utxo.masm",
+            "range_hash",
+            inputs,
+            AdviceInputs::default(),
+            memory,
+            constants,
+        )
+        .unwrap();
+
+        let mut outputs = trace.stack_outputs().stack().to_vec();
+        outputs.truncate(WORD_SIZE);
+        outputs.reverse(); // Stack is always returned in reverse
+        assert_eq!(outputs, hash);
+    }
+
+    // tx_1
+    test_case(
+        "0xc039faf939fe7908f959dd5da871658e1b3f48998e9bd5165eb5acce45764fbb",
+        vec![
+            (
+                "0xda51ad197710bafc3192226e859c8b29a2b1757dafcda157a0a293a8e392517c",
+                "0xf000000000000000",
+            ),
+            (
+                "0x496d5921189e0f6a49b64c90a62286a47381bd63641ef9d847f7b9fc917b68f8",
+                "0x0f00000000000000",
+            ),
+        ],
+    );
+    // tx_2
+    test_case(
+        "0x42007c73912db5a323312160d24008aacd6a25d38b3f30adb37dca7304e46347",
+        vec![(
+            "0xda51ad197710bafc3192226e859c8b29a2b1757dafcda157a0a293a8e392517c",
+            "0x0f00000000000000",
+        )],
+    );
+    // tx_3
+    test_case(
+        "0xeca9699210de0ecf6764f1dde94410e142645796170ac016dc22dc6a3c84b1db",
+        vec![],
+    );
+}
+
 fn run_test(
     masm_source_path: &str,
     proc_name: &str,
     stack_inputs: StackInputs,
     advice_inputs: AdviceInputs,
+    memory: BTreeMap<usize, Vec<String>>,
+    constants: Vec<(&str, &str)>,
 ) -> anyhow::Result<ExecutionTrace> {
     let code = std::fs::read_to_string(masm_source_path)?;
     let ast = ProgramAst::parse(&code)?;
@@ -66,15 +171,32 @@ fn run_test(
         .line() as usize;
 
     // Simple masm code to run the procedure we want.
-    // TODO: include code to initialize memory
-    let test_harness = format!("begin\n  exec.{proc_name}\nend");
+    let memory_code = memory
+        .iter()
+        .map(|(index, elements)| {
+            assert_eq!(elements.len(), WORD_SIZE);
+            format!(
+                "  push.{}\n  mem_storew.{index}\n  dropw\n",
+                elements.join(".")
+            )
+        })
+        .collect::<Vec<String>>()
+        .join("");
+
+    let constants_code = constants
+        .iter()
+        .map(|(name, value)| format!("const.{name}={value}\n"))
+        .collect::<Vec<String>>()
+        .join("");
+
+    let test_harness = format!("begin\n{memory_code}\n  exec.{proc_name}\nend");
 
     let test_code = code
         .lines()
         .skip(start - 1)
         .take(end - start + 1)
         .chain(test_harness.lines())
-        .fold(String::new(), |mut acc, l| {
+        .fold(constants_code, |mut acc, l| {
             writeln!(&mut acc, "{l}").unwrap();
             acc
         });

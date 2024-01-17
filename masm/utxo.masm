@@ -1,3 +1,4 @@
+const.RPO_RATE_WIDTH=8
 const.TRANSACTION_HASH_MEMORY_INDEX=10
 const.UNKNOWN_UTXO_HASH=100
 
@@ -28,6 +29,144 @@ proc.utxo_hash
     push.1.0.0
     hperm
     dropw swapw dropw # Isolate hash because final output is [Word, Hash, Word].
+end
+
+proc.range_hash
+    push.RPO_RATE_WIDTH
+    u32checked_divmod
+    dup
+    movdn.3 # put the extra copy of `n % RPO_RATE_WIDTH` away, we'll need it later
+    eq.0
+    if.true
+        # If `n % RPO_RATE_WIDTH == 0` then state starts as all zeros.
+        push.0
+    else
+        # Otherwise the state begins with a 1
+        push.1
+    end
+    push.0.0.0
+    push.0.0.0.0.0.0.0.0
+    # The element 12 items down the stack now is `n / RPO_RATE_WIDTH`, which
+    # is the number of full states we can fill before needed to handle the remainder.
+    movup.12
+    dup
+    push.0 gt
+    while.true
+        sub.1 # subtract 1 from the number of whole cycles counter
+        movdn.12 # move the counter down below the current hasher state
+        dropw dropw # drop the words that are going to be replaced
+        movup.5 # pull up the memory address we are supposed to load from
+        dup
+        padw movup.4 mem_loadw
+        movup.4
+        add.1
+        dup
+        padw movup.4 mem_loadw
+        movup.4
+        add.1
+        movdn.13 # put the memory counter away
+        hperm # do the hashing
+        movup.12 # bring the cycles counter back
+        dup
+        push.0 gt
+    end
+    # Loop over -- no more full cycles left
+    assertz # the top of the stack should be 0 if everything has worked so far
+    movup.13 # bring back the `n % RPO_RATE_WIDTH` value from earlier.
+    dup
+    eq.0
+    if.true
+        # the last full cycle was the end (no remainder), so just stack cleanup
+        drop # drop the `n % RPO_RATE_WIDTH` value
+        dropw # drop the last word of the state
+        swapw # we're going to keep the second word of the state
+        dropw # drop the first word of the state
+        movup.4 # pull up the memory counter and drop it
+        drop
+    else
+        # still 1 more hperm to do.
+        movdn.13 # put away the `n % RPO_RATE_WIDTH` value
+        dropw dropw # drop the words we're going to replace
+        movup.4 # bring up the memory counter
+        dup
+        padw movup.4 mem_loadw
+        movup.4
+        add.1
+        movup.9 # bring back up `n % RPO_RATE_WIDTH` value
+        dup
+        push.4 gt
+        if.true
+            # if `n % RPO_RATE_WIDTH > 4` then we need to load up the next word too
+            sub.4
+            movdn.9
+            padw movup.4 mem_loadw # it's ok to consume our memory counter, we don't need it anymore
+            movup.12
+            # The number on top of the stack is in the range [1, 3]
+            # it tells us how many elements we had to read from the word
+            # we just read. The element after that is set to 1 and the reset to 0.
+            push.4 swap sub
+            # Now the number on top of the stack represents how many elements
+            # we need to modify (but it is still in the range [1, 3]).
+            dup
+            eq.1
+            if.true
+                # Need to modify only the last element
+                drop # drop the bookkeeping value
+                drop # drop the last element from the word we read from memory
+                push.1
+            else
+                eq.2 # it's ok to consume our bookkeeping value, we don't need it anymore
+                if.true
+                # Need to modify two elements
+                drop drop # drop the elements to modify
+                push.1.0
+                else
+                # Must need to modify three elements
+                drop drop drop
+                push.1.0.0
+                end
+            end
+        else
+            # if `n % RPO_RATE_WIDTH <= 4` then we do not need to load another word
+            swap drop # drop memory counter (which was the next element on the stack)
+            # The number on top of the stack is in the range [1, 4]. It is how many elements
+            # to use from the last word we read from memory.
+            push.4 swap sub
+            # Now the number on top of the stack represents how many elements
+            # we need to modify and it is in the range [0, 3].
+            dup
+            eq.0
+            if.true
+                # We used the whole prior word, so just drop the bookkeeping value and
+                # fill in the rest of the state
+                drop
+                push.1.0.0.0
+            else
+                dup
+                eq.1
+                if.true
+                    drop # drop bookkeeping value
+                    drop # drop value to replace
+                    push.1
+                else
+                    eq.2 # it's ok to consume the bookkeeping value now
+                    if.true
+                        drop drop
+                        push.1.0
+                    else
+                        # must be 3 values to replace
+                        drop drop drop
+                        push.1.0.0
+                    end
+                end
+                # push on the rest of the state
+                push.0.0.0.0
+            end
+        end
+        hperm # do the last hashing
+        # stack cleanup
+        dropw swapw dropw
+    end
 end
 
 #! Search for the transaction hash index and push on to the stack. If not found, error out
@@ -71,4 +210,17 @@ begin
     exec.merkle_index
 
     exec.utxo_hash
+
+    # Advice stack has transaction hash and UTXOs.
+    # UTXO owner and value are represented in decimal fields.
+    padw adv_loadw padw
+    adv_loadw adv_push.1 padw
+    adv_loadw adv_push.1 push.0.0
+    mem_storew.13 dropw
+    mem_storew.12 dropw
+    mem_storew.11 dropw
+    mem_storew.10 dropw
+    # Transaction has 14 field elements for 2 UTXOs and the memory starts from 10
+    push.10.14
+    exec.range_hash
 end
