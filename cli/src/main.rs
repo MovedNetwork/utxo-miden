@@ -7,6 +7,9 @@ mod inputs;
 mod utils;
 mod utxo;
 
+#[cfg(test)]
+mod masm_tests;
+
 fn main() -> anyhow::Result<()> {
     let args = cli::Cli::parse();
     let config = if let Some(path) = args.config.as_deref() {
