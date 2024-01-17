@@ -1,25 +1,23 @@
-const.MODULO_DIVISOR_INDEX=8
-const.MODULO_REMAINDER_INDEX=9
 const.TRANSACTION_HASH_MEMORY_INDEX=10
 const.UNKNOWN_UTXO_HASH=100
 
-#! Performs a mod b. Stack goes from [b, a] to remainder [r]
-proc.mod
-  mem_store.MODULO_DIVISOR_INDEX mem_store.MODULO_REMAINDER_INDEX
-  push.1 # Makes it a do-while
-  while.true
-    mem_load.MODULO_REMAINDER_INDEX mem_load.MODULO_DIVISOR_INDEX
-    gt # Keep subtracting `b`s until remainder < `b`
-    if.true
-      mem_load.MODULO_REMAINDER_INDEX mem_load.MODULO_DIVISOR_INDEX
-      sub
-      mem_store.MODULO_REMAINDER_INDEX
-      push.1
-    else
-      push.0
+#! Performs a mod b => q * b + r
+#! Stack goes from [b, a] to remainder and quotient [r, q]
+proc.divmod
+    push.0
+    movdn.2
+    dup.1 dup.1
+    gte
+    while.true
+        movup.2 add.1 movdn.2 # increment quotient
+        dup
+        movdn.2
+        sub
+        swap
+        dup.1 dup.1
+        gte
     end
-  end
-  mem_load.MODULO_REMAINDER_INDEX
+    drop
 end
 
 #! Compute RPO hash of a UTXO which is composed of owner (4 words) and value (1 word)
