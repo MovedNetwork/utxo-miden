@@ -1,4 +1,4 @@
-use std::{path::Path, str::FromStr};
+use std::{collections::BTreeMap, path::Path, str::FromStr};
 
 /// Inputs used to initialize MidenVM before execution.
 #[derive(Debug)]
@@ -7,6 +7,8 @@ pub struct InputFile {
     pub operand_stack: Vec<u64>,
     /// String representation of the initial advice stack, composed of chained field elements.
     pub advice_stack: Vec<u64>,
+    /// Optional map of the initial advice map, each from u256 key to vector of field elements.
+    pub advice_map: BTreeMap<[u8; 32], Vec<u64>>,
     /// Optional vector of merkle data which will be loaded into the initial merkle store.
     pub merkle_tree: Option<Vec<[u8; 32]>>,
 }
@@ -26,6 +28,7 @@ impl InputFile {
 struct SerializeableInputFile {
     pub operand_stack: Vec<String>,
     pub advice_stack: Vec<String>,
+    pub advice_map: BTreeMap<String, Vec<String>>,
     pub merkle_tree: Option<Vec<String>>,
 }
 
@@ -45,6 +48,22 @@ impl TryFrom<SerializeableInputFile> for InputFile {
             .map(|s| u64::from_str(&s).map_err(Into::into))
             .collect();
 
+        let advice_map: anyhow::Result<BTreeMap<[u8; 32], Vec<u64>>> = value
+            .advice_map
+            .into_iter()
+            .map(|(key, value)| {
+                let mut buf = [0u8; 32];
+                let s = key.strip_prefix("0x").unwrap_or(&key);
+                hex::decode_to_slice(s, &mut buf)?;
+                // Advice map value is a vector of field elements
+                let v: anyhow::Result<Vec<u64>> = value
+                    .into_iter()
+                    .map(|s| u64::from_str(&s).map_err(Into::into))
+                    .collect();
+                Ok((buf, v?))
+            })
+            .collect();
+
         let merkle_tree: Option<anyhow::Result<Vec<[u8; 32]>>> = value.merkle_tree.map(|t| {
             t.into_iter()
                 .map(|hex_str| {
@@ -59,6 +78,7 @@ impl TryFrom<SerializeableInputFile> for InputFile {
         Ok(Self {
             operand_stack: operand_stack?,
             advice_stack: advice_stack?,
+            advice_map: advice_map?,
             merkle_tree: merkle_tree.transpose()?,
         })
     }

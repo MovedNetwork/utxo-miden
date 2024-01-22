@@ -6,7 +6,7 @@ use miden::{
     StackInputs, StackOutputs, Word,
 };
 use miden_stdlib::StdLibrary;
-use std::path::Path;
+use std::{collections::BTreeMap, path::Path};
 
 #[derive(Debug, Clone)]
 pub struct ProveOutput {
@@ -23,6 +23,7 @@ pub fn execute(config: &Config) -> anyhow::Result<ProveOutput> {
     let stack_inputs = StackInputs::try_from_values(input_file.operand_stack.into_iter())?;
     let advice_inputs = create_advice_inputs(
         input_file.advice_stack,
+        input_file.advice_map,
         input_file.merkle_tree.unwrap_or_default(),
     )?;
     let host = DefaultHost::new(MemAdviceProvider::from(advice_inputs));
@@ -68,6 +69,7 @@ impl ProveOutput {
 
 fn create_advice_inputs(
     advice_stack: Vec<u64>,
+    advice_map: BTreeMap<[u8; 32], Vec<u64>>,
     merkle_data: Vec<[u8; 32]>,
 ) -> anyhow::Result<AdviceInputs> {
     let leaves: anyhow::Result<Vec<Word>> = merkle_data
@@ -86,7 +88,12 @@ fn create_advice_inputs(
         tmp.extend(tree.inner_nodes());
         tmp
     };
+    let map: BTreeMap<[u8; 32], Vec<Felt>> = advice_map
+        .into_iter()
+        .map(|(key, value)| (key, value.into_iter().map(|v| Felt::new(v)).collect()))
+        .collect();
     Ok(AdviceInputs::default()
         .with_merkle_store(merkle_store)
-        .with_stack_values(advice_stack)?)
+        .with_stack_values(advice_stack)?
+        .with_map(map))
 }
