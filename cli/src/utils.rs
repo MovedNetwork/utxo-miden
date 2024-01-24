@@ -1,6 +1,24 @@
+use crate::{config::Config, utxo::State};
+use anyhow::Context;
 use miden_crypto::{Felt, Word};
-use std::str::FromStr;
+use std::{path::Path, str::FromStr};
 use winter_utils::{Deserializable, Serializable};
+
+pub fn write_state(state: &State, config: &Config) -> anyhow::Result<()> {
+    let state_root: String = HexString::from(state.get_root()).into();
+    println!("State root = {state_root}");
+    let output = serde_json::to_string_pretty(&state)?;
+    let output_path = config.no_zk_path.join("state.json");
+    std::fs::write(&output_path, output).context("Failed to write state file")?;
+    println!("State written to {output_path:?}");
+    Ok(())
+}
+
+pub fn read_json_file<T: for<'a> serde::Deserialize<'a>>(path: &Path) -> anyhow::Result<T> {
+    let data = std::fs::read_to_string(path)?;
+    let t: T = serde_json::from_str(&data)?;
+    Ok(t)
+}
 
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
 #[serde(try_from = "String", into = "String")]

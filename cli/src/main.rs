@@ -1,9 +1,9 @@
 use clap::Parser;
 use config::Config;
 
+mod advice_provider;
 mod cli;
 mod config;
-mod inputs;
 mod utils;
 mod utxo;
 

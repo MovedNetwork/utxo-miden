@@ -54,7 +54,7 @@ pub struct Transaction {
 }
 
 impl Transaction {
-    pub fn hash(&self) -> Word {
+    pub fn to_elems(&self) -> Vec<Felt> {
         let mut elems = Vec::with_capacity(4 + 5 * self.outputs.len());
         for e in self.input {
             elems.push(e);
@@ -62,6 +62,11 @@ impl Transaction {
         for u in self.outputs.iter() {
             u.serialize_inner(&mut elems);
         }
+        elems
+    }
+
+    pub fn hash(&self) -> Word {
+        let elems = self.to_elems();
         let h = Rpo256::hash_elements(&elems);
         h.into()
     }
@@ -227,6 +232,13 @@ pub struct SerializedTransaction {
     pub outputs: Vec<SerializedUtxo>,
 }
 
+#[derive(Debug, serde::Deserialize, serde::Serialize)]
+pub struct SerializedSignedTransaction {
+    pub transaction: SerializedTransaction,
+    /// `transaction.input.owner.verify(transaction.hash(), signature)` must return `true`.
+    pub signature: HexString,
+}
+
 impl TryFrom<SerializedKey> for Key {
     type Error = anyhow::Error;
 
@@ -297,5 +309,30 @@ impl From<Transaction> for SerializedTransaction {
         let input = value.input.into();
         let outputs = value.outputs.into_iter().map(Into::into).collect();
         Self { input, outputs }
+    }
+}
+
+impl TryFrom<SerializedSignedTransaction> for SignedTransaction {
+    type Error = anyhow::Error;
+
+    fn try_from(value: SerializedSignedTransaction) -> Result<Self, Self::Error> {
+        let transaction = value.transaction.try_into()?;
+        let signature = Signature::read_from_bytes(&value.signature.bytes)
+            .map_err(|e| anyhow::Error::msg(format!("Failed to deserialize signature: {e:?}")))?;
+        Ok(Self {
+            transaction,
+            signature,
+        })
+    }
+}
+
+impl From<SignedTransaction> for SerializedSignedTransaction {
+    fn from(value: SignedTransaction) -> Self {
+        let transaction = value.transaction.into();
+        let signature = value.signature.to_bytes();
+        Self {
+            transaction,
+            signature: HexString { bytes: signature },
+        }
     }
 }

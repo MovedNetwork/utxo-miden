@@ -31,6 +31,14 @@ proc.utxo_hash
     dropw swapw dropw # Isolate hash because final output is [Word, Hash, Word].
 end
 
+#! Compute the RPO hash of elements from a range of addresses in memory.
+#! The input stack is `[n, start, ...]` and the output stack is `[HASH, ...]`.
+#! `n` is the number of elements to hash, `start` is the memory address to start at.
+#! It is assumed the elements are contiguous in memory. `n` does not need to be a multiple
+#! of 4 (i.e. the data does not need to be in whole words), but 4 elements will be
+#! taken from each memory address. For example, with input `[6, 0x02, ...]` the whole
+#! word will be taken from address `0x02` and the first two elements of the word at
+#! address `0x03` will also be included in the hash.
 proc.range_hash
     push.RPO_RATE_WIDTH
     u32checked_divmod
@@ -203,24 +211,62 @@ proc.merkle_index
     sub.1
 end
 
+#! Operand stack starts as [tx_size, TX_HASH, STATE_ROOT], where
+#! `tx_size` is the number of elements in the serialized transaction.
+#! The advice stack contains the transaction serialized as field elements.
+#! Execution proceeds as follows:
+#!   1. Verify `hash(advice_stack) == TX_HASH`.
+#!   2. Verify transaction input UTXO is in the state merkle tree.
+#!   3. Verify the signature over the transaction is valid. (TODO)
+#!   4. Verify the value of the output UTXOs is less than or equal to the input UTXO value. (TODO)
+#!   5. Pop the input UTXO out of the state merkle tree. (TODO)
+#!   6. Push the output UTXOs into the state merkle tree. (TODO)
+#!   7. Finish with the updated state root in the operand stack. (TODO)
+proc.main
+  # 1.a load the advice stack into memory
+  dup # make a copy of the number of elements (we'll need it later)
+  push.TRANSACTION_HASH_MEMORY_INDEX # initialize memory counter
+  swap # bring elements counter to the top
+  dup
+  push.4 gte # check we can store a whole word
+  while.true
+    swap # bring memory counter to the top
+    padw
+    adv_loadw # load first word of advice stack
+    movup.4 # bring the memory counter to the top
+    dup movdn.5 # copy the counter and push it down
+    mem_storew # store the advice word in memory
+    dropw # drop the word we stored off the operand stack
+    add.1 # increment the memory counter
+    swap # bring the elements counter back up
+    sub.4 # subtract 4 since we just stored 4 elements
+    dup push.4 gte # check if there is a whole word left
+  end
+  dup push.0 gt # check if we need to store a partial word
+  if.true
+    swap # bring memory counter to the top
+    padw
+    adv_loadw # load first word of advice stack
+    movup.4 # bring the memory counter to the top
+    mem_storew # store the advice word in memory (consuming the memory counter)
+    dropw # drop the word we stored off the operand stack
+    drop # drop the elements counter
+  else
+    drop drop # drop the memory counter and elements counter
+  end
+  # 1.b compute the hash of the data in memory
+  push.TRANSACTION_HASH_MEMORY_INDEX # bring back the starting memory address
+  swap # bring the number of elements to the top
+  exec.range_hash
+  # 1.c check the hash matches
+  assert_eqw
+
+  # 2. check the input is in the state
+  exec.merkle_index
+
+  # TODO: steps 3 - 7
+end
+
 begin
-    # Keep transaction input hash in memory for multiple future access
-    mem_storew.TRANSACTION_HASH_MEMORY_INDEX dropw
-
-    exec.merkle_index
-
-    exec.utxo_hash
-
-    # Advice stack has transaction hash and UTXOs.
-    # UTXO owner and value are represented in decimal fields.
-    padw adv_loadw padw
-    adv_loadw adv_push.1 padw
-    adv_loadw adv_push.1 push.0.0
-    mem_storew.13 dropw
-    mem_storew.12 dropw
-    mem_storew.11 dropw
-    mem_storew.10 dropw
-    # Transaction has 14 field elements for 2 UTXOs and the memory starts from 10
-    push.10.14
-    exec.range_hash
+    exec.main
 end

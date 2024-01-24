@@ -1,12 +1,15 @@
-use crate::{config::Config, inputs::InputFile};
+use crate::{
+    advice_provider::UtxoAdvice,
+    config::Config,
+    utils,
+    utxo::{SignedTransaction, State},
+};
+use anyhow::Context;
 use miden::{
-    crypto::{MerkleStore, MerkleTree},
-    math::Felt,
-    AdviceInputs, Assembler, DefaultHost, ExecutionProof, MemAdviceProvider, ProvingOptions,
-    StackInputs, StackOutputs, Word,
+    math::Felt, Assembler, DefaultHost, ExecutionProof, ProvingOptions, StackInputs, StackOutputs,
 };
 use miden_stdlib::StdLibrary;
-use std::{collections::BTreeMap, path::Path};
+use std::path::Path;
 
 #[derive(Debug, Clone)]
 pub struct ProveOutput {
@@ -15,18 +18,17 @@ pub struct ProveOutput {
     pub proof: ExecutionProof,
 }
 
-pub fn execute(config: &Config) -> anyhow::Result<ProveOutput> {
+pub fn execute(config: &Config, signed_tx: SignedTransaction) -> anyhow::Result<ProveOutput> {
     let code = std::fs::read_to_string(&config.code_path)?;
     let assembler = Assembler::default().with_library(&StdLibrary::default())?;
     let program = assembler.compile(code)?;
-    let input_file = InputFile::parse(&config.inputs_path)?;
-    let stack_inputs = StackInputs::try_from_values(input_file.operand_stack.into_iter())?;
-    let advice_inputs = create_advice_inputs(
-        input_file.advice_stack,
-        input_file.advice_map,
-        input_file.merkle_tree.unwrap_or_default(),
-    )?;
-    let host = DefaultHost::new(MemAdviceProvider::from(advice_inputs));
+    let state: State =
+        utils::read_json_file(&config.state_path).context("Failed to read state file")?;
+
+    let stack_inputs = prepare_stack_inputs(&state, &signed_tx);
+    let advice_provider = UtxoAdvice::new(&state, signed_tx)
+        .ok_or_else(|| anyhow::Error::msg("Input UTXO not present in the state"))?;
+    let host = DefaultHost::new(advice_provider);
 
     let (stack_outputs, proof) =
         miden::prove(&program, stack_inputs, host, ProvingOptions::default())?;
@@ -67,33 +69,16 @@ impl ProveOutput {
     }
 }
 
-fn create_advice_inputs(
-    advice_stack: Vec<u64>,
-    advice_map: BTreeMap<[u8; 32], Vec<u64>>,
-    merkle_data: Vec<[u8; 32]>,
-) -> anyhow::Result<AdviceInputs> {
-    let leaves: anyhow::Result<Vec<Word>> = merkle_data
-        .into_iter()
-        .map(|bytes| {
-            let mut word = Word::default();
-            for (w, value) in word.iter_mut().zip(bytes.chunks_exact(8)) {
-                *w = Felt::try_from(value).map_err(|e| anyhow::Error::msg(format!("{e:?}")))?;
-            }
-            Ok(word)
-        })
+// The operand stack starts as transaction_size then transaction hash and finally state root
+pub fn prepare_stack_inputs(state: &State, signed_tx: &SignedTransaction) -> StackInputs {
+    let tx_size = Felt::new(signed_tx.transaction.to_elems().len() as u64);
+    let transaction_hash = signed_tx.transaction.hash();
+    let state_root = state.get_root();
+    let mut input_stack: Vec<Felt> = std::iter::once(tx_size)
+        .chain(transaction_hash.into_iter().rev())
+        .chain(state_root.into_iter().rev())
         .collect();
-    let tree = MerkleTree::new(leaves?)?;
-    let merkle_store = {
-        let mut tmp = MerkleStore::default();
-        tmp.extend(tree.inner_nodes());
-        tmp
-    };
-    let map: BTreeMap<[u8; 32], Vec<Felt>> = advice_map
-        .into_iter()
-        .map(|(key, value)| (key, value.into_iter().map(|v| Felt::new(v)).collect()))
-        .collect();
-    Ok(AdviceInputs::default()
-        .with_merkle_store(merkle_store)
-        .with_stack_values(advice_stack)?
-        .with_map(map))
+    input_stack.reverse();
+
+    StackInputs::new(input_stack)
 }

@@ -1,17 +1,62 @@
 //! Module for writing tests for masm programs.
 
 use miden::{
-    AdviceInputs, Assembler, DefaultHost, ExecutionTrace, MemAdviceProvider, ProgramAst,
+    math::Felt, Assembler, DefaultHost, ExecutionTrace, MemAdviceProvider, ProgramAst,
     ProvingOptions, StackInputs,
 };
 use miden_crypto::{StarkField, WORD_SIZE};
+use miden_processor::AdviceProvider;
 use miden_stdlib::StdLibrary;
 use std::{collections::BTreeMap, fmt::Write, str::FromStr};
 
 use crate::{
+    advice_provider::UtxoAdvice,
+    cli::prove,
     utils::HexString,
-    utxo::{SerializedTransaction, SerializedUtxo, Transaction},
+    utxo::{SerializedTransaction, SerializedUtxo, SignedTransaction, State, Transaction, Utxo},
 };
+
+// Tries running the prover on a real UTXO state and transaction
+#[test]
+fn test_main() {
+    let key_pair = miden_crypto::dsa::rpo_falcon512::KeyPair::new().unwrap();
+    let owner = key_pair.public_key().into();
+    let initial_utxo = Utxo {
+        owner,
+        value: Felt::new(100),
+    };
+    let mut initial_state = State::empty();
+    initial_state.insert(initial_utxo.clone()).unwrap();
+
+    let output_1 = Utxo {
+        owner,
+        value: Felt::new(10),
+    };
+    let output_2 = Utxo {
+        owner,
+        value: Felt::new(90),
+    };
+
+    let transaction = Transaction {
+        input: initial_utxo.hash(),
+        outputs: vec![output_1, output_2],
+    };
+    let signed_tx = SignedTransaction::new(transaction, key_pair).unwrap();
+
+    let stack_inputs = prove::prepare_stack_inputs(&initial_state, &signed_tx);
+    let advice_provider = UtxoAdvice::new(&initial_state, signed_tx).unwrap();
+
+    let trace = run_test(
+        "../masm/utxo.masm",
+        "main",
+        stack_inputs,
+        advice_provider,
+        BTreeMap::default(),
+    )
+    .unwrap();
+    println!("{:?}", trace.stack_outputs());
+    // TODO: some assert on the output
+}
 
 #[test]
 fn test_divmod() {
@@ -24,9 +69,8 @@ fn test_divmod() {
             "../masm/utxo.masm",
             "divmod",
             inputs,
-            AdviceInputs::default(),
+            MemAdviceProvider::default(),
             BTreeMap::new(),
-            vec![],
         )
         .unwrap();
         let outputs = trace.stack_outputs();
@@ -97,15 +141,13 @@ fn test_range_hash() {
         utxo_felts.chunks(WORD_SIZE).for_each(|chunk| {
             memory.insert(20 + memory.len(), chunk.into());
         });
-        let constants = vec![("RPO_RATE_WIDTH", "8")];
 
         let trace = run_test(
             "../masm/utxo.masm",
             "range_hash",
             inputs,
-            AdviceInputs::default(),
+            MemAdviceProvider::default(),
             memory,
-            constants,
         )
         .unwrap();
 
@@ -144,27 +186,25 @@ fn test_range_hash() {
     );
 }
 
-fn run_test(
+fn run_test<A: AdviceProvider>(
     masm_source_path: &str,
     proc_name: &str,
     stack_inputs: StackInputs,
-    advice_inputs: AdviceInputs,
+    advice_provider: A,
     memory: BTreeMap<usize, Vec<String>>,
-    constants: Vec<(&str, &str)>,
 ) -> anyhow::Result<ExecutionTrace> {
     let code = std::fs::read_to_string(masm_source_path)?;
     let ast = ProgramAst::parse(&code)?;
-    let proc = ast
-        .procedures()
-        .iter()
-        .find(|p| p.name.as_str() == proc_name)
-        .ok_or_else(|| anyhow::Error::msg("Procedure not found"))?;
-    let start = proc
+
+    let main_start = ast
+        .body()
         .source_locations()
-        .next()
+        .first()
         .ok_or_else(|| anyhow::Error::msg("No start source location"))?
-        .line() as usize;
-    let end = proc
+        .line() as usize
+        - 2;
+    let main_end = ast
+        .body()
         .source_locations()
         .last()
         .ok_or_else(|| anyhow::Error::msg("No end source location"))?
@@ -183,27 +223,26 @@ fn run_test(
         .collect::<Vec<String>>()
         .join("");
 
-    let constants_code = constants
-        .iter()
-        .map(|(name, value)| format!("const.{name}={value}\n"))
-        .collect::<Vec<String>>()
-        .join("");
-
     let test_harness = format!("begin\n{memory_code}\n  exec.{proc_name}\nend");
-
     let test_code = code
         .lines()
-        .skip(start - 1)
-        .take(end - start + 1)
+        .enumerate()
+        .filter_map(|(i, line)| {
+            if (main_start..=main_end).contains(&i) {
+                None
+            } else {
+                Some(line)
+            }
+        })
         .chain(test_harness.lines())
-        .fold(constants_code, |mut acc, l| {
+        .fold(String::new(), |mut acc, l| {
             writeln!(&mut acc, "{l}").unwrap();
             acc
         });
 
     let assembler = Assembler::default().with_library(&StdLibrary::default())?;
     let program = assembler.compile(test_code)?;
-    let host = DefaultHost::new(MemAdviceProvider::from(advice_inputs));
+    let host = DefaultHost::new(advice_provider);
     let trace = miden::execute(
         &program,
         stack_inputs,

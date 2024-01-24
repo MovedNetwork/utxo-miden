@@ -4,8 +4,8 @@ use std::path::{Path, PathBuf};
 pub struct Config {
     /// Path to the file with UTXO MidenVM assemby (masm) code to execute.
     pub code_path: PathBuf,
-    /// Path to the file with inputs used to initialize the MidenVM
-    pub inputs_path: PathBuf,
+    /// Path to the file with UTXO state used to initialize MidenVM advice provider.
+    pub state_path: PathBuf,
     /// Path to the file where output from the CLI are written
     pub outputs_path: PathBuf,
     /// Directory where data from no-zk part of the CLI is saved.
@@ -25,7 +25,7 @@ impl Default for Config {
         let base_path = Path::new("masm");
         Self {
             code_path: base_path.join("utxo.masm"),
-            inputs_path: base_path.join("utxo.inputs"),
+            state_path: base_path.join("state.json"),
             outputs_path: base_path.join("utxo.outputs"),
             no_zk_path: Path::new("example").into(),
         }
