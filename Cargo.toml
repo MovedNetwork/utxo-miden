@@ -11,6 +11,7 @@ clap = { version = "4.4", features = ["derive"] }
 hex = "0.4"
 miden-core = "0.7"
 miden-crypto = { version = "0.7", features = ["serde"] }
+birchmd-miden-crypto = { package = "miden-crypto", git = "https://github.com/birchmd/miden-crypto", rev = "95b6e893870df6d4cf2c479f49ad2a982389ecf6", features = ["serde"] }
 miden-processor = "0.7"
 miden-stdlib = "0.6.0"
 miden-vm = { version = "0.7", features = ["concurrent"] }

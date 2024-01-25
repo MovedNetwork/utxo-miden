@@ -1,7 +1,8 @@
-use crate::utxo::{SignedTransaction, State, Utxo};
+use crate::utxo::{reverse_felt_shim, SignedTransaction, State, Utxo};
+use birchmd_miden_crypto::dsa::rpo_falcon512::Polynomial;
 use miden::{math::Felt, AdviceInputs, AdviceProvider, ExecutionError, MemAdviceProvider, Word};
 use miden_core::SignatureKind;
-use miden_crypto::{dsa::rpo_falcon512::Polynomial, merkle::MerkleStore, FieldElement, StarkField};
+use miden_crypto::{merkle::MerkleStore, FieldElement, StarkField};
 use miden_processor::ProcessState;
 use std::collections::HashMap;
 
@@ -102,7 +103,7 @@ impl AdviceProvider for UtxoAdvice {
                 let h = sig.pub_key_poly();
                 let pi = Polynomial::mul_modulo_p(&h, &s2);
 
-                let mut result: Vec<Felt> = nonce.to_vec();
+                let mut result: Vec<Felt> = nonce.iter().copied().map(reverse_felt_shim).collect();
                 result.extend(h.inner().iter().map(|a| Felt::from(*a)));
                 result.extend(s2.inner().iter().map(|a| Felt::from(*a)));
                 result.extend(pi.iter().map(|a| Felt::new(*a)));

@@ -8,6 +8,7 @@ repository.workspace = true
 
 [dependencies]
 anyhow.workspace = true
+birchmd-miden-crypto.workspace = true
 clap.workspace = true
 hex.workspace = true
 miden-core.workspace = true

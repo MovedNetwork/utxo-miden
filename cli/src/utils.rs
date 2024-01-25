@@ -1,6 +1,6 @@
 use crate::{config::Config, utxo::State};
 use anyhow::Context;
-use miden_crypto::{Felt, Word};
+use miden_core::{Felt, Word};
 use std::{path::Path, str::FromStr};
 use winter_utils::{Deserializable, Serializable};
 

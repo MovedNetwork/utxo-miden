@@ -1,18 +1,27 @@
 use crate::utils::HexString;
-use miden_crypto::{
-    dsa::rpo_falcon512::{FalconError, KeyPair, Signature},
-    hash::rpo::Rpo256,
-    merkle::MerkleTree,
-    Felt, Word,
-};
+use birchmd_miden_crypto::utils::{Deserializable, Serializable};
+use miden_crypto::{hash::rpo::Rpo256, merkle::MerkleTree, Felt, StarkField, Word};
 use std::fmt;
-use winter_utils::{Deserializable, Serializable};
+
+// Temporarily use my fork until upstream's serialization is fixed
+use birchmd_miden_crypto::dsa::rpo_falcon512::{FalconError, KeyPair, Signature};
 
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
 #[serde(try_from = "SerializedKey", into = "SerializedKey")]
 pub struct Key {
     pub pair: KeyPair,
     pub owner: Word,
+}
+
+impl Key {
+    pub fn random() -> anyhow::Result<Self> {
+        let pair = KeyPair::new()?;
+        let owner = pair.public_key().into();
+        Ok(Self {
+            pair,
+            owner: reverse_word_shim(owner),
+        })
+    }
 }
 
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
@@ -91,7 +100,7 @@ pub struct SignedTransaction {
 
 impl SignedTransaction {
     pub fn new(transaction: Transaction, key: KeyPair) -> Result<Self, FalconError> {
-        let message = transaction.hash();
+        let message = word_shim(transaction.hash());
         let signature = key.sign(message)?;
         Ok(Self {
             transaction,
@@ -101,7 +110,8 @@ impl SignedTransaction {
 
     pub fn verify(&self, input: &Utxo) -> Result<(), TransactionError> {
         self.transaction.verify(input)?;
-        if !self.signature.verify(self.transaction.hash(), input.owner) {
+        let message = word_shim(self.transaction.hash());
+        if !self.signature.verify(message, word_shim(input.owner)) {
             return Err(TransactionError::InvalidSignature);
         }
         Ok(())
@@ -280,7 +290,7 @@ impl From<Utxo> for SerializedUtxo {
         let owner = value.owner.into();
         let value_bytes = {
             let mut buf = Vec::new();
-            value.value.write_into(&mut buf);
+            felt_shim(value.value).write_into(&mut buf);
             buf
         };
         Self {
@@ -335,4 +345,45 @@ impl From<SignedTransaction> for SerializedSignedTransaction {
             signature: HexString { bytes: signature },
         }
     }
+}
+
+// These type shims are necessary because technically my fork
+// has different types than the canonical repo. These should be
+// removed after we can stop using my fork
+// (i.e. https://github.com/0xPolygonMiden/crypto/pull/266 is merged)
+fn felt_shim(x: Felt) -> birchmd_miden_crypto::Felt {
+    birchmd_miden_crypto::Felt::new(x.as_int())
+}
+
+pub fn reverse_felt_shim(x: birchmd_miden_crypto::Felt) -> Felt {
+    use birchmd_miden_crypto::StarkField;
+    Felt::new(x.as_int())
+}
+
+fn word_shim(x: Word) -> birchmd_miden_crypto::Word {
+    let mut result = birchmd_miden_crypto::Word::default();
+    for (e, y) in result.iter_mut().zip(x) {
+        *e = felt_shim(y);
+    }
+    result
+}
+
+fn reverse_word_shim(x: birchmd_miden_crypto::Word) -> Word {
+    let mut result = Word::default();
+    for (e, y) in result.iter_mut().zip(x) {
+        *e = reverse_felt_shim(y);
+    }
+    result
+}
+
+#[test]
+fn test_signed_transaction_serialization() {
+    let key = KeyPair::new().unwrap();
+    let transaction = Transaction {
+        input: Word::default(),
+        outputs: Vec::new(),
+    };
+    let signed_tx = SignedTransaction::new(transaction, key).unwrap();
+    let serialized: SerializedSignedTransaction = signed_tx.into();
+    let _: SignedTransaction = serialized.try_into().unwrap();
 }

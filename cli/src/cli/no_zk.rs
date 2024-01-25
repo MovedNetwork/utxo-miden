@@ -33,11 +33,7 @@ impl Command {
     pub fn execute(self, config: &Config) -> anyhow::Result<()> {
         match self {
             Self::GenerateKeyPair => {
-                let key_pair = miden_crypto::dsa::rpo_falcon512::KeyPair::new()?;
-                let key = Key {
-                    owner: key_pair.public_key().into(),
-                    pair: key_pair,
-                };
+                let key = Key::random()?;
                 let output = serde_json::to_string_pretty(&key)?;
                 let owner: HexString = key.owner.into();
                 let output_path = config

@@ -4,7 +4,7 @@ use miden::{
     math::Felt, Assembler, DefaultHost, ExecutionTrace, MemAdviceProvider, ProgramAst,
     ProvingOptions, StackInputs,
 };
-use miden_crypto::{StarkField, WORD_SIZE};
+use miden_core::{StarkField, WORD_SIZE};
 use miden_processor::AdviceProvider;
 use miden_stdlib::StdLibrary;
 use std::{collections::BTreeMap, fmt::Write, str::FromStr};
@@ -13,14 +13,16 @@ use crate::{
     advice_provider::UtxoAdvice,
     cli::prove,
     utils::HexString,
-    utxo::{SerializedTransaction, SerializedUtxo, SignedTransaction, State, Transaction, Utxo},
+    utxo::{
+        Key, SerializedTransaction, SerializedUtxo, SignedTransaction, State, Transaction, Utxo,
+    },
 };
 
 // Tries running the prover on a real UTXO state and transaction
 #[test]
 fn test_main() {
-    let key_pair = miden_crypto::dsa::rpo_falcon512::KeyPair::new().unwrap();
-    let owner = key_pair.public_key().into();
+    let key = Key::random().unwrap();
+    let owner = key.owner;
     let initial_utxo = Utxo {
         owner,
         value: Felt::new(100),
@@ -41,7 +43,7 @@ fn test_main() {
         input: initial_utxo.hash(),
         outputs: vec![output_1, output_2],
     };
-    let signed_tx = SignedTransaction::new(transaction, key_pair).unwrap();
+    let signed_tx = SignedTransaction::new(transaction, key.pair).unwrap();
 
     let stack_inputs = prove::prepare_stack_inputs(&initial_state, &signed_tx);
     let advice_provider = UtxoAdvice::new(&initial_state, signed_tx).unwrap();
