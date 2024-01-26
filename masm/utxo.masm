@@ -2,7 +2,8 @@ use.std::crypto::dsa::rpo_falcon512
 
 const.RPO_RATE_WIDTH=8
 const.TRANSACTION_HASH_MEMORY_INDEX=10
-const.NEW_TRANSACTION_HASH_MEMORY_INDEX=21
+const.NEW_TRANSACTION_HASH_MEMORY_INDEX=20
+const.CURRENT_UTXO_MEMORY_INDEX=30
 const.UNKNOWN_UTXO_HASH=100
 
 #! Performs a mod b => q * b + r
@@ -253,8 +254,25 @@ proc.verify_transaction_hash
     exec.range_hash
 
     # Check the hash matches
-    mem_storew.NEW_TRANSACTION_HASH_MEMORY_INDEX # keep a copy of the hash further on stack
+    mem_storew.NEW_TRANSACTION_HASH_MEMORY_INDEX # keep a copy of the hash in memory
     assert_eqw
+end
+
+proc.verify_utxo
+    # Check the provided UTXO matches its hash
+    push.3 # merkle tree depth
+    mtree_get
+    adv_push.1
+    push.CURRENT_UTXO_MEMORY_INDEX # keep current UTXO value at index + 1
+    add.1
+    mem_store
+    # Hashing UTXO to compare with the one in merkle tree
+    push.CURRENT_UTXO_MEMORY_INDEX
+    push.5 # UTXO has 5 elements: 4 for owner + 1 for value
+    exec.range_hash
+    assert_eqw
+
+    # TODO: Check total output value >= input value
 end
 
 #! Operand stack starts as [tx_size, TX_HASH, STATE_ROOT], where
@@ -263,7 +281,7 @@ end
 #! Execution proceeds as follows:
 #!   1. Verify `hash(advice_stack) == TX_HASH`.
 #!   2. Verify transaction input UTXO is in the state merkle tree.
-#!   3. Verify the signature over the transaction is valid. (TODO)
+#!   3. Verify the signature over the transaction is valid.
 #!   4. Verify the value of the output UTXOs is less than or equal to the input UTXO value. (TODO)
 #!   5. Pop the input UTXO out of the state merkle tree. (TODO)
 #!   6. Push the output UTXOs into the state merkle tree. (TODO)
@@ -278,9 +296,13 @@ proc.main
     # 3. Verify signature against transaction
     padw mem_loadw.NEW_TRANSACTION_HASH_MEMORY_INDEX
     padw adv_loadw
+    mem_storew.CURRENT_UTXO_MEMORY_INDEX # keep a copy of current UTXO
     exec.rpo_falcon512::verify
 
-    # TODO: steps 4 - 7
+    # 4. Verify UTXO is not overspent
+    exec.verify_utxo
+
+    # TODO: steps 5 - 7
 end
 
 begin

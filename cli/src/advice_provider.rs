@@ -35,6 +35,7 @@ impl UtxoAdvice {
         known_utxos.insert(raw_word(input_hash), input_utxo.clone());
         // Owner in advice stack for signature verification
         tx_elems.append(&mut input_utxo.owner.to_vec());
+        tx_elems.push(input_utxo.value);
 
         let advice_inputs = AdviceInputs::default()
             .with_stack(tx_elems)
