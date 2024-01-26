@@ -277,8 +277,7 @@ proc.main
 
     # 3. Verify signature against transaction
     padw mem_loadw.NEW_TRANSACTION_HASH_MEMORY_INDEX
-    # TODO: Inject and read owner from advice provider
-    push.0xda51ad197710bafc3192226e859c8b29a2b1757dafcda157a0a293a8e392517c
+    padw adv_loadw
     exec.rpo_falcon512::verify
 
     # TODO: steps 4 - 7

@@ -25,9 +25,6 @@ impl UtxoAdvice {
         // Merkle store contains the state
         let mut merkle_store = MerkleStore::default();
         merkle_store.extend(state.tree.inner_nodes());
-        let advice_inputs = AdviceInputs::default()
-            .with_stack(tx_elems)
-            .with_merkle_store(merkle_store);
 
         let mut known_transactions = HashMap::new();
         let key = raw_word(signed_tx.transaction.hash());
@@ -36,6 +33,12 @@ impl UtxoAdvice {
         let mut known_utxos = HashMap::new();
         let input_utxo = state.utxos.iter().find(|u| u.hash() == input_hash)?;
         known_utxos.insert(raw_word(input_hash), input_utxo.clone());
+        // Owner in advice stack for signature verification
+        tx_elems.append(&mut input_utxo.owner.to_vec());
+
+        let advice_inputs = AdviceInputs::default()
+            .with_stack(tx_elems)
+            .with_merkle_store(merkle_store);
 
         Some(Self {
             inner: MemAdviceProvider::from(advice_inputs),
