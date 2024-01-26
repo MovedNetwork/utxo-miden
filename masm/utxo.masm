@@ -1,5 +1,8 @@
+use.std::crypto::dsa::rpo_falcon512
+
 const.RPO_RATE_WIDTH=8
 const.TRANSACTION_HASH_MEMORY_INDEX=10
+const.NEW_TRANSACTION_HASH_MEMORY_INDEX=21
 const.UNKNOWN_UTXO_HASH=100
 
 #! Performs a mod b => q * b + r
@@ -211,6 +214,49 @@ proc.merkle_index
     sub.1
 end
 
+proc.verify_transaction_hash
+    # Load the advice stack into memory
+    dup # make a copy of the number of elements (we'll need it later)
+    push.TRANSACTION_HASH_MEMORY_INDEX # initialize memory counter
+    swap # bring elements counter to the top
+    dup
+    push.4 gte # check we can store a whole word
+    while.true
+        swap # bring memory counter to the top
+        padw
+        adv_loadw # load first word of advice stack
+        movup.4 # bring the memory counter to the top
+        dup movdn.5 # copy the counter and push it down
+        mem_storew # store the advice word in memory
+        dropw # drop the word we stored off the operand stack
+        add.1 # increment the memory counter
+        swap # bring the elements counter back up
+        sub.4 # subtract 4 since we just stored 4 elements
+        dup push.4 gte # check if there is a whole word left
+    end
+    dup push.0 gt # check if we need to store a partial word
+    if.true
+        swap # bring memory counter to the top
+        padw
+        adv_loadw # load first word of advice stack
+        movup.4 # bring the memory counter to the top
+        mem_storew # store the advice word in memory (consuming the memory counter)
+        dropw # drop the word we stored off the operand stack
+        drop # drop the elements counter
+    else
+        drop drop # drop the memory counter and elements counter
+    end
+
+    # Compute the hash of the data in memory
+    push.TRANSACTION_HASH_MEMORY_INDEX # bring back the starting memory address
+    swap # bring the number of elements to the top
+    exec.range_hash
+
+    # Check the hash matches
+    mem_storew.NEW_TRANSACTION_HASH_MEMORY_INDEX # keep a copy of the hash further on stack
+    assert_eqw
+end
+
 #! Operand stack starts as [tx_size, TX_HASH, STATE_ROOT], where
 #! `tx_size` is the number of elements in the serialized transaction.
 #! The advice stack contains the transaction serialized as field elements.
@@ -223,48 +269,19 @@ end
 #!   6. Push the output UTXOs into the state merkle tree. (TODO)
 #!   7. Finish with the updated state root in the operand stack. (TODO)
 proc.main
-  # 1.a load the advice stack into memory
-  dup # make a copy of the number of elements (we'll need it later)
-  push.TRANSACTION_HASH_MEMORY_INDEX # initialize memory counter
-  swap # bring elements counter to the top
-  dup
-  push.4 gte # check we can store a whole word
-  while.true
-    swap # bring memory counter to the top
-    padw
-    adv_loadw # load first word of advice stack
-    movup.4 # bring the memory counter to the top
-    dup movdn.5 # copy the counter and push it down
-    mem_storew # store the advice word in memory
-    dropw # drop the word we stored off the operand stack
-    add.1 # increment the memory counter
-    swap # bring the elements counter back up
-    sub.4 # subtract 4 since we just stored 4 elements
-    dup push.4 gte # check if there is a whole word left
-  end
-  dup push.0 gt # check if we need to store a partial word
-  if.true
-    swap # bring memory counter to the top
-    padw
-    adv_loadw # load first word of advice stack
-    movup.4 # bring the memory counter to the top
-    mem_storew # store the advice word in memory (consuming the memory counter)
-    dropw # drop the word we stored off the operand stack
-    drop # drop the elements counter
-  else
-    drop drop # drop the memory counter and elements counter
-  end
-  # 1.b compute the hash of the data in memory
-  push.TRANSACTION_HASH_MEMORY_INDEX # bring back the starting memory address
-  swap # bring the number of elements to the top
-  exec.range_hash
-  # 1.c check the hash matches
-  assert_eqw
+    # 1. Verify provided and computed hashes match
+    exec.verify_transaction_hash
 
-  # 2. check the input is in the state
-  exec.merkle_index
+    # 2. Check the input is in the state
+    exec.merkle_index
 
-  # TODO: steps 3 - 7
+    # 3. Verify signature against transaction
+    padw mem_loadw.NEW_TRANSACTION_HASH_MEMORY_INDEX
+    # TODO: Inject and read owner from advice provider
+    push.0xda51ad197710bafc3192226e859c8b29a2b1757dafcda157a0a293a8e392517c
+    exec.rpo_falcon512::verify
+
+    # TODO: steps 4 - 7
 end
 
 begin

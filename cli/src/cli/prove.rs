@@ -74,11 +74,13 @@ pub fn prepare_stack_inputs(state: &State, signed_tx: &SignedTransaction) -> Sta
     let tx_size = Felt::new(signed_tx.transaction.to_elems().len() as u64);
     let transaction_hash = signed_tx.transaction.hash();
     let state_root = state.get_root();
-    let mut input_stack: Vec<Felt> = std::iter::once(tx_size)
-        .chain(transaction_hash.into_iter().rev())
-        .chain(state_root.into_iter().rev())
+
+    // Insert stack elements in reverse, stack top is at the rear
+    let input_stack: Vec<Felt> = state_root
+        .into_iter()
+        .chain(transaction_hash.into_iter())
+        .chain(std::iter::once(tx_size))
         .collect();
-    input_stack.reverse();
 
     StackInputs::new(input_stack)
 }
