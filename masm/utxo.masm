@@ -4,6 +4,8 @@ const.RPO_RATE_WIDTH=8
 const.TRANSACTION_HASH_MEMORY_INDEX=10
 const.NEW_TRANSACTION_HASH_MEMORY_INDEX=20
 const.CURRENT_UTXO_MEMORY_INDEX=30
+const.MERKLE_TREE_DEPTH=3
+const.MERKLE_TREE_NUMBER_LEAVES=8
 const.UNKNOWN_UTXO_HASH=100
 
 #! Performs a mod b => q * b + r
@@ -186,9 +188,9 @@ end
 proc.merkle_index
     # Iterate over all the Merkle tree leaves starting from index 0
     push.0 mem_store.0
-    repeat.8
+    repeat.MERKLE_TREE_NUMBER_LEAVES
         mem_load.0
-        push.3
+        push.MERKLE_TREE_DEPTH
 
         mtree_get
         padw mem_loadw.TRANSACTION_HASH_MEMORY_INDEX
@@ -216,39 +218,72 @@ proc.merkle_index
 end
 
 proc.verify_transaction_hash
-    # Load the advice stack into memory
     dup # make a copy of the number of elements (we'll need it later)
-    push.TRANSACTION_HASH_MEMORY_INDEX # initialize memory counter
-    swap # bring elements counter to the top
-    dup
-    push.4 gte # check we can store a whole word
+    dup movdn.10 # make another copy and push it back for other procedures
+    sub.4 # discard number of txn hash elements
+    u32divmod.5 # get how many UTXOs exist
+    assertz # check correct input
+    push.0.0.0.0 # store transaction hash from the map to the memory
+    adv.push_mapval
+    padw adv_loadw
+    mem_storew.TRANSACTION_HASH_MEMORY_INDEX
+    dropw dropw # discard the hash and map key's 3 zeros
+    push.1
+    dup.1 dup.1 # copy to compare
+    gte
     while.true
-        swap # bring memory counter to the top
-        padw
-        adv_loadw # load first word of advice stack
-        movup.4 # bring the memory counter to the top
-        dup movdn.5 # copy the counter and push it down
-        mem_storew # store the advice word in memory
-        dropw # drop the word we stored off the operand stack
-        add.1 # increment the memory counter
-        swap # bring the elements counter back up
-        sub.4 # subtract 4 since we just stored 4 elements
-        dup push.4 gte # check if there is a whole word left
+        dup
+        push.0.0.0 # build map key
+        adv.push_mapval dropw # load the UTXO from the map
+        padw adv_loadw adv_push.1 # push UTXO owner and value to the operand stack
+        movup.7 movup.7 movup.7 # bring back the indexes
+        add.1 # next advice map index
+        dup.1 dup.1 # copy to compare loop counters
+        gte
     end
-    dup push.0 gt # check if we need to store a partial word
+    drop drop # drop the loop counters, we're left with total number of elements
+
+    # Insert the UTXO elements into memory
+    sub.4 # deduct number of transaction elements
+    u32divmod.4 # stack: [<mod>, <quotient>] use mod and quotient for insertion index
+    dup push.0
+    gt
+    # Identify how many zeros we should pad the stack with
     if.true
-        swap # bring memory counter to the top
-        padw
-        adv_loadw # load first word of advice stack
-        movup.4 # bring the memory counter to the top
-        mem_storew # store the advice word in memory (consuming the memory counter)
-        dropw # drop the word we stored off the operand stack
-        drop # drop the elements counter
-    else
-        drop drop # drop the memory counter and elements counter
+        push.4
+        swap
+        sub
+        # Another memory allocation for remaining elements
+        swap add.1 swap
     end
 
+    dup push.0 # copy to compare and start the loop
+    gt
+    while.true # insert zeros as many as identified above
+        push.0 # pad a zero to the elements
+        movdn.2
+        sub.1
+        dup
+        push.0 # copy to compare and loop again
+        gt
+    end
+    drop # discard loop counter
+
+    # Insert into the memory in reverse order since stack is in reverse now
+    dup push.0 # copy to compare and start the loop
+    gt
+    while.true
+        dup sub.1 movdn.5 # push back decremented memory index
+        push.TRANSACTION_HASH_MEMORY_INDEX # memory should start from this index
+        add # calculate where in the memory to insert
+        mem_storew dropw
+        dup push.0 # copy to compare and continue the loop
+        gt
+    end
+    drop # discard the counter
+
     # Compute the hash of the data in memory
+    dup.8 # copy number of transaction elements
     push.TRANSACTION_HASH_MEMORY_INDEX # bring back the starting memory address
     swap # bring the number of elements to the top
     exec.range_hash
@@ -260,7 +295,8 @@ end
 
 proc.verify_utxo
     # Check the provided UTXO matches its hash
-    push.3 # merkle tree depth
+    dup movdn.5 # copy and send back the found merkle index
+    push.MERKLE_TREE_DEPTH
     mtree_get
     adv_push.1
     push.CURRENT_UTXO_MEMORY_INDEX # keep current UTXO value at index + 1
@@ -272,7 +308,106 @@ proc.verify_utxo
     exec.range_hash
     assert_eqw
 
-    # TODO: Check total output value >= input value
+    # Check starting UTXO value >= total final UTXO values
+    push.CURRENT_UTXO_MEMORY_INDEX
+    add.1
+    mem_load
+
+    # Calculate the total final UTXO values
+    movup.6 dup movdn.7 # bring the number of elements and make the same copy
+    push.0 swap # value total
+    sub.4 # discard count of tx hash elements
+    u32divmod.5 # each UTXO will have 5 elements
+    assertz # make sure division is perfect so the provided number of elements is correct
+    dup # keep a copy of number of UTXOs for the loop
+    push.0 # for gt comparision
+    gt
+    while.true
+        push.0.0.0 # fill up to set the advice map key
+        adv.push_mapval # load UTXO
+        padw adv_loadw adv_push.1 # load UTXO owner and value
+        movdn.8 # move the value after map key
+        dropw # discard UTXO owner
+        drop drop drop
+        swap.2 # swap loop counter with value total
+        add # add the current value to the sum
+        swap # bring back the counter
+        sub.1
+        dup # compare to zero
+        push.0
+        gt
+    end
+
+    drop # discard the loop counter to be left with the total
+    gte # Starting UTXO value >= total value spent as [b, a, ..]: a > b.
+    assert
+end
+
+#! Pop the input UTXO and push the new UTXOs
+#! Stack: [R, <tree_index>, <number_of_elements>]
+proc.update_merkle_tree
+    # Load up each new UTXO, has it and insert into merkle tree.
+    # First one overwrites the starting UTXO
+    movup.5 # bring the number of elements
+    sub.4 # discard count of tx hash elements
+    u32divmod.5 # each UTXO will have 5 elements
+    assertz # make sure division is perfect so the provided number of elements is correct
+    movdn.4 # send back how many UTXOs to add
+
+    push.0.0.0.0 # empty merkle data
+    swapw # swap empty node with state root
+    movup.9 # bring back the found merkle index
+    push.MERKLE_TREE_DEPTH
+    mtree_set # push the empty node
+    dropw # we don't need previous node data
+
+    # Loop over to find empty nodes to insert the new UTXO outputs
+    movup.4 # bring back number of UTXO to push
+    push.1 # current counter for advice map UTXO index, UTXOs start from key=1
+    dup.1 dup.1 # copy the counters to compare them
+    gte
+    while.true
+        dup
+        push.0.0.0 # build up the advice map index, ie. push.<counter>.0.0.0
+        adv.push_mapval dropw
+        movdn.5 movdn.5 # move back counters
+        exec.utxo_hash # this procedure uses advice stack to get the hash
+        swapw # switch the hash with the merkle root
+
+        # Find the next empty Merkle tree index to push the UTXO hash in
+        push.0.1 # start with 0th index and go in the loop with 1
+        while.true
+            dup movdn.5 # keep a copy of the index after the state root
+            push.MERKLE_TREE_DEPTH
+            mtree_get
+            push.0.0.0.0 # empty hash data
+            eqw # check if the node is empty
+            movdn.8 dropw dropw # keep the eqw check, but discard empty data and node
+            # Save the hash in tree
+            if.true # found the empty spot in the tree
+                movup.4 # bring back the tree index
+                push.MERKLE_TREE_DEPTH
+                mtree_set # [d, i, R, V', <push_index>, <#_of_utxos>] -> [V, R', <indexes>]
+                dropw # we don't need the empty previous UTXO hash
+                push.0 # exit the empty spot search loop
+            else # continue to next tree node to find an empty spot
+                movup.4 # bring back the tree index
+                add.1 # increment the index
+                dup # copy to compare against max number of leaves
+                push.MERKLE_TREE_NUMBER_LEAVES
+                lt
+                assert # make sure there's more available leaves to search for
+                push.1 # continue the search loop
+            end
+        end
+
+        # Next hash push iteration
+        movup.5 movup.5 # bring back the map index and number of UTXOs
+        add.1
+        dup.1 dup.1 # copy the counters to compare them
+        gte
+    end
+    drop drop # cleanup indexes
 end
 
 #! Operand stack starts as [tx_size, TX_HASH, STATE_ROOT], where
@@ -282,10 +417,9 @@ end
 #!   1. Verify `hash(advice_stack) == TX_HASH`.
 #!   2. Verify transaction input UTXO is in the state merkle tree.
 #!   3. Verify the signature over the transaction is valid.
-#!   4. Verify the value of the output UTXOs is less than or equal to the input UTXO value. (TODO)
-#!   5. Pop the input UTXO out of the state merkle tree. (TODO)
-#!   6. Push the output UTXOs into the state merkle tree. (TODO)
-#!   7. Finish with the updated state root in the operand stack. (TODO)
+#!   4. Verify the value of the output UTXOs is less than or equal to the input UTXO value.
+#!   5. Pop the input UTXO out and push the output UTXOs into the state merkle tree.
+#! Return: Finish with the updated state root in the operand stack.
 proc.main
     # 1. Verify provided and computed hashes match
     exec.verify_transaction_hash
@@ -302,7 +436,8 @@ proc.main
     # 4. Verify UTXO is not overspent
     exec.verify_utxo
 
-    # TODO: steps 5 - 7
+    # 5. Push UTXOs into the Merkle tree and return new state root
+    exec.update_merkle_tree
 end
 
 begin

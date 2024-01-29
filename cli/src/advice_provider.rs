@@ -1,9 +1,9 @@
 use crate::utxo::{SignedTransaction, State, Utxo};
 use miden::{math::Felt, AdviceInputs, AdviceProvider, ExecutionError, MemAdviceProvider, Word};
 use miden_core::SignatureKind;
-use miden_crypto::{dsa::rpo_falcon512::Polynomial, merkle::MerkleStore, FieldElement, StarkField};
+use miden_crypto::{dsa::rpo_falcon512::Polynomial, merkle::MerkleStore, StarkField};
 use miden_processor::ProcessState;
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 
 pub struct UtxoAdvice {
     inner: MemAdviceProvider,
@@ -13,31 +13,34 @@ pub struct UtxoAdvice {
 
 impl UtxoAdvice {
     pub fn new(state: &State, signed_tx: SignedTransaction) -> Option<Self> {
-        let input_hash = signed_tx.transaction.input;
-
-        // The advice stack contains the serialized transaction
-        let mut tx_elems = signed_tx.transaction.to_elems();
-        // Pad to be be a multiple of a whole word
-        while tx_elems.len() % 4 != 0 {
-            tx_elems.push(Felt::ZERO);
-        }
         // Merkle store contains the state
         let mut merkle_store = MerkleStore::default();
         merkle_store.extend(state.tree.inner_nodes());
+
+        let mut known_utxos = HashMap::new();
+        let input_utxo = state.utxos.iter().find(|u| u.hash() == signed_tx.transaction.input)?;
+        known_utxos.insert(raw_word(signed_tx.transaction.input), input_utxo.clone());
+
+        // Starting UTXO in advice stack for signature verification
+        let mut utxo_elems = input_utxo.owner.to_vec();
+        utxo_elems.push(input_utxo.value);
+
+        // Transaction input hash and output UTXOs are in the advice map
+        let mut map: BTreeMap<[u8; 32], Vec<Felt>> = BTreeMap::new();
+        let mut key = [0u8; 32];
+        map.insert(key, signed_tx.transaction.input.to_vec());
+        signed_tx.transaction.outputs.iter().enumerate().for_each(|(i, utxo)| {
+            key[0] = i as u8 + 1;
+            map.insert(key, utxo.serialize());
+        });
 
         let mut known_transactions = HashMap::new();
         let key = raw_word(signed_tx.transaction.hash());
         known_transactions.insert(key, signed_tx);
 
-        let mut known_utxos = HashMap::new();
-        let input_utxo = state.utxos.iter().find(|u| u.hash() == input_hash)?;
-        known_utxos.insert(raw_word(input_hash), input_utxo.clone());
-        // Owner in advice stack for signature verification
-        tx_elems.append(&mut input_utxo.owner.to_vec());
-        tx_elems.push(input_utxo.value);
-
         let advice_inputs = AdviceInputs::default()
-            .with_stack(tx_elems)
+            .with_stack(utxo_elems)
+            .with_map(map)
             .with_merkle_store(merkle_store);
 
         Some(Self {
