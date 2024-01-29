@@ -249,7 +249,7 @@ fn run_test<A: AdviceProvider>(
         &program,
         stack_inputs,
         host,
-        ProvingOptions::default().exec_options,
+        *ProvingOptions::default().execution_options(),
     )?;
 
     Ok(trace)

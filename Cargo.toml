@@ -9,15 +9,14 @@ repository = "https://github.com/0xDuo/utxo-miden"
 anyhow = "1"
 clap = { version = "4.4", features = ["derive"] }
 hex = "0.4"
-miden-core = "0.7"
-miden-crypto = { version = "0.7", features = ["serde"] }
-birchmd-miden-crypto = { package = "miden-crypto", git = "https://github.com/birchmd/miden-crypto", rev = "95b6e893870df6d4cf2c479f49ad2a982389ecf6", features = ["serde"] }
-miden-processor = "0.7"
-miden-stdlib = "0.6.0"
-miden-vm = { version = "0.7", features = ["concurrent"] }
+miden-core = { git = "https://github.com/0xPolygonMiden/miden-vm", branch = "next" }
+miden-crypto = { git = "https://github.com/0xPolygonMiden/crypto", branch = "next", features = ["serde"] }
+miden-processor = { git = "https://github.com/0xPolygonMiden/miden-vm", branch = "next" }
+miden-stdlib = { git = "https://github.com/0xPolygonMiden/miden-vm", branch = "next" }
+miden-vm = { git = "https://github.com/0xPolygonMiden/miden-vm", branch = "next", features = ["concurrent"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
-winter-utils = "0.6"
+winter-utils = "0.7"
 
 [workspace]
 resolver = "2"

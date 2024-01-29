@@ -78,7 +78,7 @@ pub fn prepare_stack_inputs(state: &State, signed_tx: &SignedTransaction) -> Sta
     // Insert stack elements in reverse, stack top is at the rear
     let input_stack: Vec<Felt> = state_root
         .into_iter()
-        .chain(transaction_hash.into_iter())
+        .chain(transaction_hash)
         .chain(std::iter::once(tx_size))
         .collect();
 

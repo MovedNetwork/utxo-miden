@@ -45,7 +45,7 @@ end
 #! address `0x03` will also be included in the hash.
 proc.range_hash
     push.RPO_RATE_WIDTH
-    u32checked_divmod
+    u32divmod
     dup
     movdn.3 # put the extra copy of `n % RPO_RATE_WIDTH` away, we'll need it later
     eq.0
