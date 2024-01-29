@@ -43,7 +43,7 @@ fn test_main() {
         input: initial_utxo.hash(),
         outputs: vec![output_1, output_2],
     };
-    let signed_tx = SignedTransaction::new(transaction, key.pair).unwrap();
+    let signed_tx = SignedTransaction::new(transaction.clone(), key.pair).unwrap();
 
     let stack_inputs = prove::prepare_stack_inputs(&initial_state, &signed_tx);
     let advice_provider = UtxoAdvice::new(&initial_state, signed_tx).unwrap();
@@ -56,8 +56,19 @@ fn test_main() {
         BTreeMap::default(),
     )
     .unwrap();
-    println!("{:?}", trace.stack_outputs());
-    // TODO: some assert on the output
+    // The top 4 elements on the stack represents the state root in reverse
+    let mut stack_outputs = trace.stack_outputs().stack()[0..4].to_vec();
+    stack_outputs.reverse();
+
+    // Re-run the transaction in Rust implementation equivalent to compare the results
+    let signed_tx = SignedTransaction::new(transaction.clone(), key.pair).unwrap();
+    initial_state.process_tx(signed_tx).unwrap();
+    let state_root = initial_state
+        .get_root()
+        .into_iter()
+        .map(|el| el.as_int())
+        .collect::<Vec<u64>>();
+    assert_eq!(state_root, stack_outputs);
 }
 
 #[test]
